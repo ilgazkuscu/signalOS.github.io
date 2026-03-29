@@ -203,6 +203,39 @@
 
   // Fetch trending markets
   async function loadTrending() {
+      // Predefined Iran-related markets for quick access
+  state.trending = [
+    {
+      id: 'us_invade_iran_by_2025',
+      question: 'U.S. forces enter Iran by March 31 2025?',
+      slug: 'us-invade-iran-by-mar-31-2025',
+      yesToken: '',
+      noToken: '',
+      volume: 0,
+      liquidity: 0,
+    },
+    {
+      id: 'us_declare_war_on_iran_2025',
+      question: 'Will the U.S. declare war on Iran by December 31 2025?',
+      slug: 'us-declare-war-on-iran-by-dec-31-2025',
+      yesToken: '',
+      noToken: '',
+      volume: 0,
+      liquidity: 0,
+    },
+    {
+      id: 'us_iran_ceasefire_2025',
+      question: 'U.S. & Iran ceasefire agreement by December 31 2025?',
+      slug: 'us-iran-ceasefire-agreement-by-dec-31-2025',
+      yesToken: '',
+      noToken: '',
+      volume: 0,
+      liquidity: 0,
+    },
+  ];
+  renderTrending();
+  return;
+
     try {
       const data = await fetchJson(`${GAMMA}/markets?closed=false&limit=20`);
       if (!Array.isArray(data)) return;
