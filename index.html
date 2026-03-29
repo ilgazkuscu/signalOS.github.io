@@ -249,7 +249,11 @@
     try {
       const data = await fetchJson(`${GAMMA}/markets?closed=false&limit=50`);
       if (!Array.isArray(data)) {
-        state.trending = [];
+        // If the API response isn't an array (e.g. error object), fall back to
+        // predefined markets rather than leaving the list empty.  This ensures
+        // the insights section always has content when the gamma API returns
+        // unexpected data structures.
+        state.trending = FALLBACK_MARKETS.slice(0, 3);
         renderTrending();
         return;
       }
