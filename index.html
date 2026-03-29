@@ -165,6 +165,43 @@
     theme: localStorage.getItem('signalos-theme') || 'dark',
   };
 
+  // Predefined markets used when API requests fail. These are well‑known
+  // Polymarket questions with substantial traded volume (approximated). When
+  // the gamma API cannot be reached or returns no data, the insights section
+  // will fall back to these entries so the user always sees some markets.
+  // Yes/no token ids are intentionally left blank to avoid price fetches
+  // failing on unsupported CLOB endpoints; volume values are used for whale
+  // thresholds.
+  const FALLBACK_MARKETS = [
+    {
+      id: "531202",
+      question: "BitBoy convicted?",
+      slug: "bitboy-convicted",
+      yesToken: "",
+      noToken: "",
+      volume: 284224.01519699756,
+      liquidity: 15947.85996
+    },
+    {
+      id: "540819",
+      question: "Will Jesus Christ return before GTA VI?",
+      slug: "will-jesus-christ-return-before-gta-vi-665",
+      yesToken: "",
+      noToken: "",
+      volume: 10347413.546851065,
+      liquidity: 685097.9202
+    },
+    {
+      id: "540818",
+      question: "What will happen before GTA VI?",
+      slug: "what-will-happen-before-gta-vi",
+      yesToken: "",
+      noToken: "",
+      volume: 19747925.1062258,
+      liquidity: 1389259.88938
+    }
+  ];
+
   // Apply initial theme
   if (state.theme === 'light') document.body.classList.add('light');
 
@@ -202,43 +239,20 @@
   }
 
   // Fetch trending markets
+  // Pull a set of open markets from the Polymarket Gamma API and
+  // select the largest markets by traded volume.  Markets with
+  // volume >= $50k are considered significant; if fewer than three
+  // meet the threshold then the top three by volume are used.  This
+  // replaces the previously hard‑coded Iran examples and ensures the
+  // insights section always displays real, liquid markets.
   async function loadTrending() {
-      // Predefined Iran-related markets for quick access
-  state.trending = [
-    {
-      id: 'us_invade_iran_by_2025',
-      question: 'U.S. forces enter Iran by March 31 2025?',
-      slug: 'us-invade-iran-by-mar-31-2025',
-      yesToken: '',
-      noToken: '',
-      volume: 0,
-      liquidity: 0,
-    },
-    {
-      id: 'us_declare_war_on_iran_2025',
-      question: 'Will the U.S. declare war on Iran by December 31 2025?',
-      slug: 'us-declare-war-on-iran-by-dec-31-2025',
-      yesToken: '',
-      noToken: '',
-      volume: 0,
-      liquidity: 0,
-    },
-    {
-      id: 'us_iran_ceasefire_2025',
-      question: 'U.S. & Iran ceasefire agreement by December 31 2025?',
-      slug: 'us-iran-ceasefire-agreement-by-dec-31-2025',
-      yesToken: '',
-      noToken: '',
-      volume: 0,
-      liquidity: 0,
-    },
-  ];
-  renderTrending();
-  return;
-
     try {
-      const data = await fetchJson(`${GAMMA}/markets?closed=false&limit=20`);
-      if (!Array.isArray(data)) return;
+      const data = await fetchJson(`${GAMMA}/markets?closed=false&limit=50`);
+      if (!Array.isArray(data)) {
+        state.trending = [];
+        renderTrending();
+        return;
+      }
       const markets = data.map((m) => ({
         id: m.conditionId || m.id,
         question: m.question || m.title || 'Unknown',
@@ -248,11 +262,17 @@
         volume: parseFloat(m.volume || m.volumeNum || 0),
         liquidity: parseFloat(m.liquidity || m.liquidityNum || 0),
       }));
+      // Sort by descending volume
       markets.sort((a, b) => b.volume - a.volume);
-      state.trending = markets.slice(0, 3);
+      // Filter for markets meeting a $50k volume threshold
+      const significant = markets.filter((m) => m.volume >= 50000);
+      const selected = (significant.length >= 3 ? significant : markets).slice(0, 3);
+      state.trending = selected;
       renderTrending();
-    } catch (e) {
-      errorEl.textContent = 'Error loading trending markets';
+    } catch (err) {
+      // On error, fall back to predefined markets so users always see something
+      state.trending = FALLBACK_MARKETS.slice(0, 3);
+      renderTrending();
     }
   }
 
@@ -426,39 +446,39 @@
   // Whale feed (fetch large trades periodically)
   async function loadWhales() {
     whaleListEl.innerHTML = '';
-      let whaleCount = 0;
-    
+    let whaleCount = 0;
     for (const m of state.tracked) {
       try {
         const data = await fetchJson(`${GAMMA}/activity?market=${m.id}&limit=10`);
         if (!Array.isArray(data)) continue;
-        data.for1ach((t) => {
+        data.forEach((t) => {
           const sizeUSD = parseFloat(t.amountUsd || t.sizeUsd || 0);
-       if (sizeUSD < 1) rturn;e
+          // Determine threshold: either 1% of the market's total volume or $50k
+          const vol = parseFloat(m.volume || 0);
+          const threshold = Math.max(vol * 0.01, 50000);
+          if (sizeUSD < threshold) return;
           const row = document.createElement('div');
           row.className = 'market-card';
           const span = document.createElement('span');
           span.textContent = `${m.question}: ${t.side || ''} $${sizeUSD.toFixed(0)}`;
           row.appendChild(span);
-              
-          
           whaleListEl.appendChild(row);
-                whaleCount++;
+          whaleCount++;
         });
       } catch {
-        // ignore
+        // ignore errors
       }
     }
-  }i
-  if (whaleCount === 0) {
-    const msg = document.createElement('div');
-    msg.extContent = 'No whale trades yet. Monitor these markets for high-value activity.';
-    msg.style.color = 'var(--muted)';
-    whaleListEl.appendChild(msg);
+    // If no whale trades were added, display a friendly message
+    if (whaleCount === 0) {
+      const msg = document.createElement('div');
+      msg.style.padding = '8px';
+      msg.style.fontSize = '13px';
+      msg.style.color = getComputedStyle(document.body).getPropertyValue('--muted');
+      msg.textContent = 'No whale trades meeting the threshold (>1% of volume or >$50k) yet.';
+      whaleListEl.appendChild(msg);
+    }
   }
-
-}
-  
 
   // Periodically update whales
   setInterval(() => {
