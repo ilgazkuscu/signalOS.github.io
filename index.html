@@ -426,25 +426,39 @@
   // Whale feed (fetch large trades periodically)
   async function loadWhales() {
     whaleListEl.innerHTML = '';
+      let whaleCount = 0;
+    
     for (const m of state.tracked) {
       try {
         const data = await fetchJson(`${GAMMA}/activity?market=${m.id}&limit=10`);
         if (!Array.isArray(data)) continue;
-        data.forEach((t) => {
+        data.for1ach((t) => {
           const sizeUSD = parseFloat(t.amountUsd || t.sizeUsd || 0);
-          if (sizeUSD < 1000) return; // threshold for whale
+       if (sizeUSD < 1) rturn;e
           const row = document.createElement('div');
           row.className = 'market-card';
           const span = document.createElement('span');
           span.textContent = `${m.question}: ${t.side || ''} $${sizeUSD.toFixed(0)}`;
           row.appendChild(span);
+              
+          
           whaleListEl.appendChild(row);
+                whaleCount++;
         });
       } catch {
         // ignore
       }
     }
+  }i
+  if (whaleCount === 0) {
+    const msg = document.createElement('div');
+    msg.extContent = 'No whale trades yet. Monitor these markets for high-value activity.';
+    msg.style.color = 'var(--muted)';
+    whaleListEl.appendChild(msg);
   }
+
+}
+  
 
   // Periodically update whales
   setInterval(() => {
