@@ -1,1778 +1,429 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>SignalOS Whale Detector</title>
-    <!-- Load React and ReactDOM from CDN -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Load Recharts UMD bundle -->
-    <script crossorigin src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
-    <!-- Load Babel for in‑browser JSX transformation -->
-    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <style>
-      /* Theme variables: dark and light modes.  Colours are inspired by
-         high‑end finance and prediction market sites like WSJ, Kalshi and
-         Polymarket.  Use data‑theme='light' on <html> to switch themes. */
-      :root {
-        --bg: #08090f;
-        --text: #ddd;
-        --card-bg: #10121c;
-        --border: #1a1e2e;
-        --accent: #6c5ce7;
-        --positive: #2ecc71;
-        --negative: #e74c3c;
-        --warning: #f7b731;
-        --muted: #555;
-        --btn-neutral-bg: #1a1e2e;
-        --btn-neutral-color: #888;
-        --btn-neutral-border: #252a3a;
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SignalOS Whale Detector</title>
+  <style>
+    /* Root variables for dark and light themes */
+    :root {
+      --bg: #08090f;
+      --text: #ddd;
+      --card-bg: #10121c;
+      --border: #1a1e2e;
+      --accent: #6c5ce7;
+      --positive: #2ecc71;
+      --negative: #e74c3c;
+      --warning: #f7b731;
+      --muted: #555;
+    }
+    body.light {
+      --bg: #f7f8fa;
+      --text: #222;
+      --card-bg: #ffffff;
+      --border: #e5e7eb;
+      --accent: #4b4ecd;
+      --positive: #28a745;
+      --negative: #dc3545;
+      --warning: #f0ad4e;
+      --muted: #666;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+        Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    .btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--card-bg);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: var(--border);
+    }
+    main {
+      padding: 16px;
+    }
+    .section {
+      margin-bottom: 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .section h2 {
+      margin-top: 0;
+      font-size: 16px;
+    }
+    #trending-list, #search-results, #tracked-list, #whale-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .market-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px;
+      background: var(--bg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .market-card span {
+      flex: 1 1 auto;
+      font-size: 13px;
+    }
+    .market-card button {
+      padding: 4px 8px;
+      font-size: 12px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+    .market-card button.remove {
+      background: var(--negative);
+    }
+    .small-chart {
+      width: 100%;
+      height: 60px;
+    }
+    #error {
+      white-space: pre-wrap;
+      color: var(--negative);
+      font-size: 12px;
+      margin: 8px 0;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SignalOS Whale Detector</h1>
+    <button id="theme-toggle" class="btn">Toggle Theme</button>
+  </header>
+  <main>
+    <div class="section" id="insights">
+      <h2>Market Insights</h2>
+      <div id="trending-list"></div>
+    </div>
+    <div class="section" id="search">
+      <h2>Search Markets</h2>
+      <input type="text" id="search-input" placeholder="Search for a market..." />
+      <div id="search-results"></div>
+    </div>
+    <div class="section" id="tracked">
+      <h2>Tracked Markets</h2>
+      <div id="tracked-list"></div>
+    </div>
+    <div class="section" id="whales">
+      <h2>Whale Feed</h2>
+      <div id="whale-list"></div>
+    </div>
+    <div id="error"></div>
+  </main>
+<script>
+(() => {
+  const PROXY = "https://corsproxy.io/?";
+  const GAMMA = "https://gamma-api.polymarket.com";
+  const CLOB = "https://clob.polymarket.com";
+
+  const state = {
+    trending: [],
+    searchResults: [],
+    tracked: [],
+    whales: [],
+    theme: localStorage.getItem('signalos-theme') || 'dark',
+  };
+
+  // Apply initial theme
+  if (state.theme === 'light') document.body.classList.add('light');
+
+  // Theme toggle handler
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    document.body.classList.toggle('light');
+    localStorage.setItem('signalos-theme', state.theme);
+  });
+
+  // Elements
+  const trendingListEl = document.getElementById('trending-list');
+  const searchInputEl = document.getElementById('search-input');
+  const searchResultsEl = document.getElementById('search-results');
+  const trackedListEl = document.getElementById('tracked-list');
+  const whaleListEl = document.getElementById('whale-list');
+  const errorEl = document.getElementById('error');
+
+  // Helper: fetch JSON with timeout
+  async function fetchJson(url, timeout = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      let res = await fetch(url, { signal: controller.signal }).catch(() => null);
+      if (!res || !res.ok) {
+        // fallback to proxy
+        res = await fetch(PROXY + encodeURIComponent(url), { signal: controller.signal });
       }
-      [data-theme="light"] {
-        --bg: #f7f8fa;
-        --text: #222;
-        --card-bg: #ffffff;
-        --border: #e5e7eb;
-        --accent: #4b4ecd;
-        --positive: #28a745;
-        --negative: #dc3545;
-        --warning: #f0ad4e;
-        --muted: #666;
-        --btn-neutral-bg: #f1f2f4;
-        --btn-neutral-color: #444;
-        --btn-neutral-border: #d5d7dc;
+      clearTimeout(timer);
+      return await res.json();
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
+  }
+
+  // Fetch trending markets
+  async function loadTrending() {
+    try {
+      const data = await fetchJson(`${GAMMA}/markets?closed=false&limit=20`);
+      if (!Array.isArray(data)) return;
+      const markets = data.map((m) => ({
+        id: m.conditionId || m.id,
+        question: m.question || m.title || 'Unknown',
+        slug: m.slug || '',
+        yesToken: parseClobTokens(m.clobTokenIds, 0),
+        noToken: parseClobTokens(m.clobTokenIds, 1),
+        volume: parseFloat(m.volume || m.volumeNum || 0),
+        liquidity: parseFloat(m.liquidity || m.liquidityNum || 0),
+      }));
+      markets.sort((a, b) => b.volume - a.volume);
+      state.trending = markets.slice(0, 3);
+      renderTrending();
+    } catch (e) {
+      errorEl.textContent = 'Error loading trending markets';
+    }
+  }
+
+  // Parse token ids from CLOB array
+  function parseClobTokens(raw, idx) {
+    if (!raw) return '';
+    try {
+      const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return Array.isArray(arr) ? arr[idx] || '' : '';
+    } catch {
+      return '';
+    }
+  }
+
+  // Fetch price history for token
+  async function getPriceHistory(tokenId, fidelity = 60) {
+    if (!tokenId) return [];
+    try {
+      const data = await fetchJson(`${CLOB}/prices-history?market=${tokenId}&interval=max&fidelity=${fidelity}`);
+      if (!data || !data.history) return [];
+      return data.history.map((p) => ({
+        time: p.t * 1000,
+        price: Math.round(parseFloat(p.p) * 10000) / 100,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  // Render trending markets
+  function renderTrending() {
+    trendingListEl.innerHTML = '';
+    state.trending.forEach((m) => {
+      const div = document.createElement('div');
+      div.className = 'market-card';
+      const span = document.createElement('span');
+      span.textContent = `${m.question}`;
+      const btn = document.createElement('button');
+      btn.textContent = 'Add';
+      btn.onclick = () => addTracked(m);
+      div.appendChild(span);
+      div.appendChild(btn);
+      trendingListEl.appendChild(div);
+    });
+  }
+
+  // Add to tracked markets
+  function addTracked(market) {
+    if (state.tracked.find((t) => t.id === market.id)) return;
+    state.tracked.push({ ...market });
+    saveTracked();
+    renderTracked();
+  }
+
+  function removeTracked(id) {
+    state.tracked = state.tracked.filter((m) => m.id !== id);
+    saveTracked();
+    renderTracked();
+  }
+
+  function saveTracked() {
+    localStorage.setItem('signalos-tracked', JSON.stringify(state.tracked));
+  }
+
+  function loadTracked() {
+    try {
+      const arr = JSON.parse(localStorage.getItem('signalos-tracked')) || [];
+      state.tracked = arr;
+    } catch {
+      state.tracked = [];
+    }
+  }
+
+  // Render tracked markets (with price chart)
+  function renderTracked() {
+    trackedListEl.innerHTML = '';
+    state.tracked.forEach(async (m) => {
+      const card = document.createElement('div');
+      card.className = 'market-card';
+      const span = document.createElement('span');
+      span.textContent = m.question;
+      const chart = document.createElement('canvas');
+      chart.className = 'small-chart';
+      const removeBtn = document.createElement('button');
+      removeBtn.textContent = 'Remove';
+      removeBtn.classList.add('remove');
+      removeBtn.onclick = () => removeTracked(m.id);
+      card.appendChild(span);
+      card.appendChild(chart);
+      card.appendChild(removeBtn);
+      trackedListEl.appendChild(card);
+      const history = await getPriceHistory(m.yesToken);
+      drawChart(chart, history);
+    });
+  }
+
+  // Draw simple line chart on canvas
+  function drawChart(canvas, data) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+    if (!data || data.length === 0) {
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--muted');
+      ctx.fillText('No data', 10, 30);
+      return;
+    }
+    // Normalize data
+    const prices = data.map((d) => d.price);
+    const times = data.map((d) => d.time);
+    const minP = Math.min(...prices);
+    const maxP = Math.max(...prices);
+    const minT = Math.min(...times);
+    const maxT = Math.max(...times);
+    const points = data.map((d) => {
+      const x = ((d.time - minT) / (maxT - minT)) * width;
+      const y = height - ((d.price - minP) / (maxP - minP || 1)) * height;
+      return { x, y };
+    });
+    ctx.beginPath();
+    ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--accent');
+    ctx.lineWidth = 1;
+    points.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+  }
+
+  // Search markets
+  searchInputEl.addEventListener('input', async (e) => {
+    const query = e.target.value.trim();
+    if (query.length < 2) {
+      searchResultsEl.innerHTML = '';
+      return;
+    }
+    try {
+      const data = await fetchJson(`${GAMMA}/markets?title=${encodeURIComponent(query)}&closed=false&limit=10`);
+      if (!Array.isArray(data)) return;
+      state.searchResults = data.map((m) => ({
+        id: m.conditionId || m.id,
+        question: m.question || m.title || 'Unknown',
+        slug: m.slug || '',
+        yesToken: parseClobTokens(m.clobTokenIds, 0),
+        noToken: parseClobTokens(m.clobTokenIds, 1),
+        volume: parseFloat(m.volume || m.volumeNum || 0),
+        liquidity: parseFloat(m.liquidity || m.liquidityNum || 0),
+      }));
+      renderSearchResults();
+    } catch {
+      errorEl.textContent = 'Error searching markets';
+    }
+  });
+
+  function renderSearchResults() {
+    searchResultsEl.innerHTML = '';
+    state.searchResults.forEach((m) => {
+      const div = document.createElement('div');
+      div.className = 'market-card';
+      const span = document.createElement('span');
+      span.textContent = m.question;
+      const btn = document.createElement('button');
+      btn.textContent = 'Add';
+      btn.onclick = () => addTracked(m);
+      div.appendChild(span);
+      div.appendChild(btn);
+      searchResultsEl.appendChild(div);
+    });
+  }
+
+  // Whale feed (fetch large trades periodically)
+  async function loadWhales() {
+    whaleListEl.innerHTML = '';
+    for (const m of state.tracked) {
+      try {
+        const data = await fetchJson(`${GAMMA}/activity?market=${m.id}&limit=10`);
+        if (!Array.isArray(data)) continue;
+        data.forEach((t) => {
+          const sizeUSD = parseFloat(t.amountUsd || t.sizeUsd || 0);
+          if (sizeUSD < 1000) return; // threshold for whale
+          const row = document.createElement('div');
+          row.className = 'market-card';
+          const span = document.createElement('span');
+          span.textContent = `${m.question}: ${t.side || ''} $${sizeUSD.toFixed(0)}`;
+          row.appendChild(span);
+          whaleListEl.appendChild(row);
+        });
+      } catch {
+        // ignore
       }
-      body {
-        margin: 0;
-        font-family: 'DM Sans', sans-serif;
-        padding: 0;
-        background-color: var(--bg);
-        color: var(--text);
-        transition: background-color 0.3s ease, color 0.3s ease;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <!-- Application code -->
-    <script type="text/babel">
-      // Provide localStorage fallback for the storage API used by SignalOS.
-      if (!window.storage) {
-        window.storage = {
-          async get(key, isShared) {
-            return { value: localStorage.getItem(key) };
-          },
-          async set(key, value, isShared) {
-            localStorage.setItem(key, value);
-          },
-        };
-      }
+    }
+  }
 
-      // Destructure React and Recharts from global UMD builds.
-      const { useState, useEffect, useRef, useCallback } = React;
-      const {
-        AreaChart,
-        Area,
-        XAxis,
-        YAxis,
-        Tooltip,
-        ResponsiveContainer,
-        BarChart,
-        Bar,
-      } = Recharts;
+  // Periodically update whales
+  setInterval(() => {
+    if (state.tracked.length > 0) loadWhales();
+  }, 30000);
 
-      // ═══════════════════════════════════════════════════════
-      // THEME DEFINITIONS
-      // ═══════════════════════════════════════════════════════
-      // Define colour palettes for dark and light themes. These palettes borrow
-      // from professional finance sites like WSJ, Kalshi, and Polymarket. The
-      // dark theme mirrors the original look; the light theme introduces a clean
-      // off‑white background and softer text colours.
-      const THEMES = {
-        dark: {
-          bg: "#08090f",
-          text: "#ddd",
-          cardBg: "#10121c",
-          border: "#1a1e2e",
-          accent: "#6c5ce7",
-          positive: "#2ecc71",
-          negative: "#e74c3c",
-          warning: "#f7b731",
-          muted: "#555",
-          btnNeutralBg: "#1a1e2e",
-          btnNeutralColor: "#888",
-          btnNeutralBorder: "#252a3a",
-        },
-        light: {
-          bg: "#f7f8fa",
-          text: "#222",
-          cardBg: "#ffffff",
-          border: "#e5e7eb",
-          accent: "#4b4ecd",
-          positive: "#28a745",
-          negative: "#dc3545",
-          warning: "#f0ad4e",
-          muted: "#666",
-          btnNeutralBg: "#f1f2f4",
-          btnNeutralColor: "#444",
-          btnNeutralBorder: "#d5d7dc",
-        },
-      };
-
-      // Initialize a global themeColors reference for child components that
-      // reside outside the SignalOS component (e.g. PriceChart). Default to dark.
-      if (!window.themeColors) {
-        window.themeColors = THEMES.dark;
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // API LAYER - Real Polymarket data via CORS proxy
-      // ═══════════════════════════════════════════════════════
-      const PROXY = "https://corsproxy.io/?";
-      const GAMMA = "https://gamma-api.polymarket.com";
-      const CLOB = "https://clob.polymarket.com";
-
-      async function apiGet(url, timeout = 8000) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeout);
-        try {
-          // Try direct first
-          let res = await fetch(url, { signal: controller.signal }).catch(() => null);
-          if (!res || !res.ok) {
-            // Fallback to CORS proxy
-            res = await fetch(PROXY + encodeURIComponent(url), { signal: controller.signal });
-          }
-          clearTimeout(timer);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return await res.json();
-        } catch (e) {
-          clearTimeout(timer);
-          throw e;
-        }
-      }
-
-      async function searchMarkets(query, limit = 10) {
-        const data = await apiGet(
-          `${GAMMA}/markets?title=${encodeURIComponent(query)}&closed=false&limit=${limit}`
-        );
-        return (Array.isArray(data) ? data : []).map((m) => ({
-          id: m.conditionId || m.id,
-          question: m.question || m.title || "Unknown",
-          slug: m.slug || "",
-          yesToken: parseClobTokens(m.clobTokenIds, 0),
-          noToken: parseClobTokens(m.clobTokenIds, 1),
-          outcomePrices: parseOutcomePrices(m.outcomePrices),
-          volume: parseFloat(m.volume || m.volumeNum || 0),
-          liquidity: parseFloat(m.liquidity || m.liquidityNum || 0),
-          image: m.image || "",
-          endDate: m.endDate || "",
-          active: m.active !== false && m.closed !== true,
-        }));
-      }
-
-      async function getPrice(tokenId) {
-        if (!tokenId) return null;
-        try {
-          const data = await apiGet(`${CLOB}/midpoint?token_id=${tokenId}`);
-          return parseFloat(data.mid || data.midpoint || data);
-        } catch {
-          return null;
-        }
-      }
-
-      async function getPriceHistory(tokenId, fidelity = 60) {
-        if (!tokenId) return [];
-        try {
-          const data = await apiGet(
-            `${CLOB}/prices-history?market=${tokenId}&interval=max&fidelity=${fidelity}`
-          );
-          if (!data || !data.history) return [];
-          return data.history.map((p) => ({
-            time: new Date(p.t * 1000).toLocaleTimeString("en-US", {
-              hour12: false,
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            price: Math.round(parseFloat(p.p) * 10000) / 100,
-            ts: p.t * 1000,
-          }));
-        } catch {
-          return [];
-        }
-      }
-
-      async function getMarketTrades(conditionId) {
-        if (!conditionId) return [];
-        try {
-          const data = await apiGet(`${GAMMA}/activity?market=${conditionId}&limit=50`);
-          return Array.isArray(data) ? data : [];
-        } catch {
-          return [];
-        }
-      }
-
-      function parseClobTokens(raw, idx) {
-        if (!raw) return "";
-        try {
-          const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
-          return Array.isArray(arr) ? arr[idx] || "" : "";
-        } catch {
-          return "";
-        }
-      }
-
-      function parseOutcomePrices(raw) {
-        if (!raw) return [0.5, 0.5];
-        try {
-          const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
-          return Array.isArray(arr) ? arr.map(Number) : [0.5, 0.5];
-        } catch {
-          return [0.5, 0.5];
-        }
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // PERSISTENT STORAGE - Shared whale data
-      // ═══════════════════════════════════════════════════════
-      async function saveSharedWhales(whales) {
-        try {
-          await window.storage.set(
-            "signalos-whales",
-            JSON.stringify(whales.slice(0, 100)),
-            true
-          );
-        } catch {}
-      }
-      async function loadSharedWhales() {
-        try {
-          const r = await window.storage.get("signalos-whales", true);
-          return r ? JSON.parse(r.value) : [];
-        } catch {
-          return [];
-        }
-      }
-      async function saveTrackedMarkets(markets) {
-        try {
-          await window.storage.set("signalos-markets", JSON.stringify(markets), false);
-        } catch {}
-      }
-      async function loadTrackedMarkets() {
-        try {
-          const r = await window.storage.get("signalos-markets", false);
-          return r ? JSON.parse(r.value) : [];
-        } catch {
-          return [];
-        }
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // FORMATTING
-      // ═══════════════════════════════════════════════════════
-      const F = {
-        usd: (n) => `$${Math.round(n).toLocaleString()}`,
-        bigUsd: (n) =>
-          n >= 1e6
-            ? `$${(n / 1e6).toFixed(1)}M`
-            : n >= 1e3
-            ? `$${(n / 1e3).toFixed(0)}K`
-            : `$${Math.round(n)}`,
-        cents: (n) => `${(n * 100).toFixed(1)}c`,
-        pct: (n) => `${(n * 100).toFixed(1)}%`,
-        time: (d) =>
-          new Date(d).toLocaleTimeString("en-US", { hour12: false }),
-        ago: (d) => {
-          const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
-          if (m < 1) return "now";
-          if (m < 60) return `${m}m`;
-          if (m < 1440) return `${Math.floor(m / 60)}h`;
-          return `${Math.floor(m / 1440)}d`;
-        },
-      };
-
-      // ═══════════════════════════════════════════════════════
-      // NOTIFICATIONS
-      // ═══════════════════════════════════════════════════════
-      function initNotifs() {
-        if ("Notification" in window && Notification.permission === "default")
-          Notification.requestPermission();
-      }
-      function alertWhale(trade, market) {
-        if ("Notification" in window && Notification.permission === "granted") {
-          new Notification(`SignalOS: ${trade.side} ${F.usd(trade.size)}`, {
-            body: `${market}\n${F.cents(trade.price)} | ${trade.wallet?.slice(0, 10) || "unknown"}`,
-            tag: trade.id,
-          });
-        }
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // CHART COMPONENTS
-      // ═══════════════════════════════════════════════════════
-      function PriceChart({ data, color }) {
-        if (!data || data.length < 2)
-          return (
-            <div
-              style={{
-                height: 100,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--muted)',
-                fontSize: 11,
-              }}
-            >
-              Loading price data...
-            </div>
-          );
-        return (
-          <ResponsiveContainer width="100%" height={100}>
-            <AreaChart
-              data={data.slice(-60)}
-              margin={{ top: 2, right: 2, left: -24, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient
-                  id={`g-${color.slice(1)}`}
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop offset="0%" stopColor={color} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={color} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="time"
-                tick={{ fontSize: 8, fill: "#333" }}
-                interval="preserveEnd"
-                tickCount={5}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 8, fill: "#333" }}
-                axisLine={false}
-                tickLine={false}
-                domain={["auto", "auto"]}
-                tickFormatter={(v) => `${v}c`}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: "#151822",
-                  border: "1px solid #252a3a",
-                  borderRadius: 6,
-                  fontSize: 10,
-                  fontFamily: "monospace",
-                }}
-                formatter={(v) => [`${v}c`, "YES"]}
-              />
-              <Area
-                type="monotone"
-                dataKey="price"
-                stroke={color}
-                strokeWidth={1.5}
-                fill={`url(#g-${color.slice(1)})`}
-                dot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        );
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // MARKET SEARCH MODAL
-      // ═══════════════════════════════════════════════════════
-      function SearchModal({ onAdd, onClose }) {
-        const [query, setQuery] = useState("");
-        const [results, setResults] = useState([]);
-        const [loading, setLoading] = useState(false);
-        const [error, setError] = useState("");
-
-        const search = async () => {
-          if (!query.trim()) return;
-          setLoading(true);
-          setError("");
-          try {
-            const r = await searchMarkets(query, 12);
-            setResults(r.filter((m) => m.active));
-          } catch (e) {
-            setError("API error: " + e.message + ". Try again or check connection.");
-          }
-          setLoading(false);
-        };
-
-        return (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "#000000cc",
-              zIndex: 999,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 16,
-            }}
-            onClick={onClose}
-          >
-            <div
-              style={{
-                background: "#10121c",
-                borderRadius: 16,
-                border: "1px solid #252a3a",
-                width: "100%",
-                maxWidth: 600,
-                maxHeight: "80vh",
-                overflow: "hidden",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div
-                style={{
-                  padding: '16px 20px',
-                  borderBottom: '1px solid var(--border)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span
-                  style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}
-                >
-                  Search Polymarket
-                </span>
-                <button
-                  onClick={onClose}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    fontSize: 18,
-                    cursor: 'pointer',
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-              <div
-                style={{
-                  padding: "12px 20px",
-                  display: "flex",
-                  gap: 8,
-                }}
-              >
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && search()}
-                  placeholder="Search markets... (e.g. iran, bitcoin, trump, fed)"
-                  style={{
-                    flex: 1,
-                    background: 'var(--bg)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    padding: '10px 14px',
-                    color: 'var(--text)',
-                    fontSize: 13,
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                  }}
-                />
-                <button
-                  onClick={search}
-                  disabled={loading}
-                  style={{
-                    ...BS.btn,
-                    background: 'var(--accent)',
-                    color: '#fff',
-                    opacity: loading ? 0.5 : 1,
-                  }}
-                >
-                  {loading ? '...' : 'Search'}
-                </button>
-              </div>
-              {error && (
-                <div
-                  style={{
-                    padding: '8px 20px',
-                    color: 'var(--negative)',
-                    fontSize: 12,
-                  }}
-                >
-                  {error}
-                </div>
-              )}
-              <div
-                style={{
-                  padding: "0 20px 16px",
-                  maxHeight: 400,
-                  overflowY: "auto",
-                }}
-              >
-                {results.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      padding: '10px 12px',
-                      background: 'var(--bg)',
-                      borderRadius: 8,
-                      marginBottom: 6,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      border: '1px solid var(--border)',
-                      transition: 'border-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--border');
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          color: 'var(--text)',
-                          fontWeight: 600,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {m.question}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--muted)',
-                          marginTop: 3,
-                          fontFamily: 'monospace',
-                          display: 'flex',
-                          gap: 12,
-                        }}
-                      >
-                        <span style={{ color: 'var(--positive)' }}>
-                          YES {F.cents(m.outcomePrices[0] || 0)}
-                        </span>
-                        <span>Vol {F.bigUsd(m.volume)}</span>
-                        <span>Liq {F.bigUsd(m.liquidity)}</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        onAdd(m);
-                        onClose();
-                      }}
-                      style={{
-                        ...BS.btn,
-                        background: 'var(--positive)',
-                        color: '#fff',
-                        fontSize: 11,
-                        padding: '6px 12px',
-                      }}
-                    >
-                      + Track
-                    </button>
-                  </div>
-                ))}
-                {results.length === 0 && !loading && !error && (
-                  <div
-                    style={{
-                      textAlign: 'center',
-                      padding: 24,
-                      color: 'var(--muted)',
-                      fontSize: 13,
-                    }}
-                  >
-                    Search for any Polymarket event
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // TRACKED MARKET CARD
-      // ═══════════════════════════════════════════════════════
-      function TrackedMarket({
-        market,
-        whales,
-        onRemove,
-        thresholdUsd,
-        thresholdPct,
-      }) {
-        const [expanded, setExpanded] = useState(false);
-        const [priceData, setPriceData] = useState([]);
-        const [currentPrice, setCurrentPrice] = useState(
-          market.outcomePrices?.[0] || 0.5
-        );
-        const [status, setStatus] = useState("idle");
-        const yesWhales = whales.filter((w) => w.side === "YES").length;
-        const noWhales = whales.length - yesWhales;
-        const totalVol = whales.reduce((s, w) => s + (w.size || 0), 0);
-
-        // Poll price
-        useEffect(() => {
-          let alive = true;
-          const poll = async () => {
-            if (!market.yesToken) return;
-            try {
-              setStatus("polling");
-              const p = await getPrice(market.yesToken);
-              if (alive && p !== null) {
-                setCurrentPrice(p);
-                setPriceData((prev) => {
-                  const point = {
-                    time: new Date().toLocaleTimeString("en-US", {
-                      hour12: false,
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    }),
-                    price: Math.round(p * 10000) / 100,
-                  };
-                  return [...prev.slice(-120), point];
-                });
-                setStatus("live");
-              }
-            } catch {
-              setStatus("error");
-            }
-          };
-          poll();
-          const iv = setInterval(poll, 15000);
-          // Load history once
-          getPriceHistory(market.yesToken, 60).then((h) => {
-            if (alive && h.length > 0) setPriceData(h);
-          });
-          return () => {
-            alive = false;
-            clearInterval(iv);
-          };
-        }, [market.yesToken]);
-
-        const noPrice = 1 - currentPrice;
-        const pctYes =
-          whales.length > 0
-            ? ((yesWhales / whales.length) * 100).toFixed(0)
-            : "--";
-        const pctNo =
-          whales.length > 0
-            ? ((noWhales / whales.length) * 100).toFixed(0)
-            : "--";
-
-        const colors = [
-          "#e74c3c",
-          "#f7b731",
-          "#2ecc71",
-          "#3498db",
-          "#9b59b6",
-          "#e67e22",
-        ];
-        const color = colors[Math.abs(hashStr(market.id)) % colors.length];
-
-        return (
-          <div
-            style={{
-              background: "#10121c",
-              borderRadius: 12,
-              border: "1px solid #1a1e2e",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              onClick={() => setExpanded(!expanded)}
-              style={{
-                padding: "12px 14px",
-                cursor: "pointer",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  flex: 1,
-                  minWidth: 0,
-                }}
-              >
-                <div
-                  style={{
-                    width: 4,
-                    height: 36,
-                    borderRadius: 2,
-                    background: color,
-                    flexShrink: 0,
-                  }}
-                />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: 'var(--text)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {market.question}
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      marginTop: 3,
-                      fontSize: 11,
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    <span style={{ color: 'var(--positive)', fontWeight: 700 }}>
-                      YES {F.cents(currentPrice)}
-                    </span>
-                    <span style={{ color: 'var(--negative)' }}>
-                      NO {F.cents(noPrice)}
-                    </span>
-                    <span style={{ color: 'var(--muted)' }}>
-                      Vol {F.bigUsd(market.volume)}
-                    </span>
-                    <span
-                      style={{
-                        color:
-                          status === 'live'
-                            ? 'var(--positive)'
-                            : status === 'error'
-                            ? 'var(--negative)'
-                            : 'var(--muted)',
-                        fontSize: 9,
-                      }}
-                    >
-                      {status === "live"
-                        ? "● LIVE"
-                        : status === "polling"
-                        ? "● ..."
-                        : status === "error"
-                        ? "● ERR"
-                        : ""}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 6,
-                  alignItems: "center",
-                  flexShrink: 0,
-                }}
-              >
-                {whales.length > 0 && (
-                  <span
-                    style={{
-                      background: "#f7b73118",
-                      color: "#f7b731",
-                      padding: "2px 8px",
-                      borderRadius: 8,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    🐋 {whales.length}
-                  </span>
-                )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(market.id);
-                  }}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#333",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    padding: 4,
-                  }}
-                >
-                  ✕
-                </button>
-                <span
-                  style={{
-                    color: "#333",
-                    fontSize: 12,
-                    transform: expanded ? "rotate(180deg)" : "",
-                    transition: "transform 0.2s",
-                  }}
-                >
-                  ▾
-                </span>
-              </div>
-            </div>
-
-            {/* YES/NO whale bar */}
-            {whales.length > 0 && (
-              <div
-                style={{
-                  padding: "0 14px 6px",
-                  display: "flex",
-                  gap: 2,
-                  alignItems: "center",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 9,
-                    color: "#2ecc71",
-                    fontFamily: "monospace",
-                    width: 28,
-                  }}
-                >
-                  {pctYes}%
-                </span>
-                <div
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    gap: 1,
-                    height: 4,
-                    borderRadius: 2,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#2ecc71",
-                      flex: yesWhales || 1,
-                      transition: "flex 0.5s",
-                    }}
-                  />
-                  <div
-                    style={{
-                      background: "#e74c3c",
-                      flex: noWhales || 1,
-                      transition: "flex 0.5s",
-                    }}
-                  />
-                </div>
-                <span
-                  style={{
-                    fontSize: 9,
-                    color: "#e74c3c",
-                    fontFamily: "monospace",
-                    width: 28,
-                    textAlign: "right",
-                  }}
-                >
-                  {pctNo}%
-                </span>
-              </div>
-            )}
-
-            {expanded && (
-              <div style={{ padding: "0 14px 14px" }}>
-                <div
-                  style={{
-                    fontSize: 9,
-                    color: "#444",
-                    fontFamily: "monospace",
-                    marginBottom: 4,
-                    fontWeight: 600,
-                  }}
-                >
-                  YES PRICE
-                </div>
-                <PriceChart data={priceData} color={color} />
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                    gap: 6,
-                    marginTop: 10,
-                  }}
-                >
-                  {[
-                    { l: "WHALE VOL", v: F.bigUsd(totalVol) },
-                    { l: "YES", v: String(yesWhales), c: "#2ecc71" },
-                    { l: "NO", v: String(noWhales), c: "#e74c3c" },
-                    {
-                      l: "THRESHOLD",
-                      v: `${F.bigUsd(thresholdUsd)} / ${thresholdPct}%`,
-                    },
-                  ].map((s) => (
-                    <div
-                      key={s.l}
-                      style={{
-                        background: 'var(--bg)',
-                        borderRadius: 6,
-                        padding: '6px 8px',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 8,
-                          color: 'var(--muted)',
-                          fontFamily: 'monospace',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {s.l}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: s.c || 'var(--text)',
-                          fontFamily: 'monospace',
-                          marginTop: 1,
-                        }}
-                      >
-                        {s.v}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {whales.length > 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <div
-                      style={{
-                          fontSize: 9,
-                          color: 'var(--muted)',
-                          fontFamily: 'monospace',
-                          fontWeight: 600,
-                          marginBottom: 4,
-                        }}
-                    >
-                      WHALE TRADES
-                    </div>
-                    {whales.slice(0, 8).map((t) => (
-                      <div
-                        key={t.id}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "32px 72px 52px 1fr 50px",
-                          gap: 4,
-                          fontSize: 10,
-                          padding: '3px 6px',
-                          fontFamily: 'monospace',
-                          color: 'var(--muted)',
-                          borderLeft: `2px solid ${
-                            t.side === 'YES' ? 'var(--positive)' : 'var(--negative)'
-                          }`,
-                          marginBottom: 2,
-                          background: 'var(--bg)',
-                          borderRadius: '0 4px 4px 0',
-                        }}
-                      >
-                        <span
-                          style={{
-                            color: t.side === 'YES' ? 'var(--positive)' : 'var(--negative)',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {t.side}
-                        </span>
-                        <span style={{ color: 'var(--text)', fontWeight: 600 }}>
-                          {F.usd(t.size)}
-                        </span>
-                        <span>@ {F.cents(t.price)}</span>
-                        <span>{t.wallet || "unknown"}</span>
-                        <span style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                          {F.ago(t.timestamp)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      function hashStr(s) {
-        let h = 0;
-        for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-        return h;
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // MAIN APP
-      // ═══════════════════════════════════════════════════════
-      function SignalOS() {
-        const [trackedMarkets, setTrackedMarkets] = useState([]);
-        const [allWhales, setAllWhales] = useState({});
-        const [globalWhales, setGlobalWhales] = useState([]);
-        const [wallets, setWallets] = useState({});
-        const [showSearch, setShowSearch] = useState(false);
-        const [thresholdUsd, setThresholdUsd] = useState(50000);
-        const [thresholdPct, setThresholdPct] = useState(1);
-        const [running, setRunning] = useState(false);
-        const [connectionStatus, setConnectionStatus] = useState("disconnected");
-        const [tab, setTab] = useState("markets");
-        const [uptime, setUptime] = useState(0);
-        const intervalRef = useRef(null);
-        const startRef = useRef(null);
-
-        // Theme state. Defaults to dark. When changed, update the html
-        // data-theme attribute and global theme colours used by charts. We
-        // synchronise the theme to the DOM so CSS variables take effect.
-        const [theme, setTheme] = useState(
-          document.documentElement.dataset.theme || 'dark'
-        );
-        useEffect(() => {
-          document.documentElement.dataset.theme = theme;
-          // Update global chart colours
-          window.themeColors = THEMES[theme];
-        }, [theme]);
-
-        const toggleTheme = () => {
-          setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-        };
-
-        // Trending markets for insights section (top markets by volume).
-        const [trending, setTrending] = useState([]);
-        useEffect(() => {
-          (async () => {
-            try {
-              // Pull a set of markets with a blank query and sort by volume desc
-              const results = await searchMarkets('', 20);
-              const sorted = results.sort((a, b) => (b.volume || 0) - (a.volume || 0));
-              setTrending(sorted.slice(0, 3));
-            } catch (e) {
-              console.error('Error fetching trending markets', e);
-            }
-          })();
-        }, []);
-
-        // Load saved markets and shared whales on mount
-        useEffect(() => {
-          initNotifs();
-          (async () => {
-            const saved = await loadTrackedMarkets();
-            if (saved.length > 0) setTrackedMarkets(saved);
-            const sharedW = await loadSharedWhales();
-            if (sharedW.length > 0) {
-              setGlobalWhales(sharedW);
-              const byMkt = {};
-              sharedW.forEach((w) => {
-                if (!byMkt[w.marketId]) byMkt[w.marketId] = [];
-                byMkt[w.marketId].push(w);
-              });
-              setAllWhales(byMkt);
-            }
-          })();
-        }, []);
-
-        // Save markets when they change
-        useEffect(() => {
-          if (trackedMarkets.length > 0) saveTrackedMarkets(trackedMarkets);
-        }, [trackedMarkets]);
-
-        // Uptime
-        useEffect(() => {
-          if (!running) return;
-          const t = setInterval(() => {
-            if (startRef.current) setUptime(Math.floor((Date.now() - startRef.current) / 1000));
-          }, 1000);
-          return () => clearInterval(t);
-        }, [running]);
-
-        const addMarket = useCallback((market) => {
-          setTrackedMarkets((prev) => {
-            if (prev.find((m) => m.id === market.id)) return prev;
-            return [...prev, market];
-          });
-        }, []);
-
-        const removeMarket = useCallback((id) => {
-          setTrackedMarkets((prev) => prev.filter((m) => m.id !== id));
-        }, []);
-
-        // Monitor trades for whale detection
-        const checkForWhales = useCallback(async () => {
-          for (const market of trackedMarkets) {
-            try {
-              const trades = await getMarketTrades(market.id);
-              if (!trades.length) continue;
-
-              for (const t of trades.slice(0, 20)) {
-                const size = parseFloat(t.value || t.amount || t.size || 0);
-                const isWhale = size >= thresholdUsd || (market.volume > 0 && size >= market.volume * (thresholdPct / 100));
-                if (!isWhale) continue;
-
-                const tradeId = `${market.id}_${t.id || t.transactionHash || t.timestamp}_${size}`;
-
-                // Dedup
-                setGlobalWhales((prev) => {
-                  if (prev.find((w) => w.id === tradeId)) return prev;
-                  const whale = {
-                    id: tradeId,
-                    marketId: market.id,
-                    marketTitle: market.question,
-                    timestamp: t.timestamp || t.createdAt || new Date().toISOString(),
-                    wallet: t.proxyWallet || t.address || t.maker || "unknown",
-                    side: t.side === "BUY" || t.outcome === "Yes" ? "YES" : "NO",
-                    size: Math.round(size),
-                    price: parseFloat(t.price || t.outcomePrice || 0.5),
-                    isWhale: true,
-                  };
-                  alertWhale(whale, market.question);
-                  const updated = [whale, ...prev].slice(0, 100);
-                  saveSharedWhales(updated);
-
-                    // Update wallet tracker
-                  setWallets((wp) => {
-                    const ex = wp[whale.wallet] || { trades: 0, totalSize: 0, sides: [], markets: [] };
-                    return {
-                      ...wp,
-                      [whale.wallet]: {
-                        trades: ex.trades + 1,
-                        totalSize: ex.totalSize + whale.size,
-                        sides: [...ex.sides, whale.side],
-                        markets: [...new Set([...ex.markets, market.id])],
-                        isRepeat: ex.trades >= 1,
-                        crossMarket: new Set([...ex.markets, market.id]).size > 1,
-                        lastSeen: whale.timestamp,
-                      },
-                    };
-                  });
-
-                  setAllWhales((aw) => ({
-                    ...aw,
-                    [market.id]: [whale, ...(aw[market.id] || [])].slice(0, 30),
-                  }));
-
-                  return updated;
-                });
-              }
-              setConnectionStatus("live");
-            } catch {
-              setConnectionStatus("degraded");
-            }
-          }
-        }, [trackedMarkets, thresholdUsd, thresholdPct]);
-
-        const start = useCallback(() => {
-          if (trackedMarkets.length === 0) {
-            setShowSearch(true);
-            return;
-          }
-          startRef.current = Date.now();
-          setRunning(true);
-          setConnectionStatus("connecting");
-          checkForWhales();
-          intervalRef.current = setInterval(checkForWhales, 30000);
-        }, [trackedMarkets, checkForWhales]);
-
-        const stop = useCallback(() => {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          setRunning(false);
-          setConnectionStatus("disconnected");
-        }, []);
-
-        useEffect(() => () => {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-        }, []);
-
-        const fmtUp = (s) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ${s % 60}s`;
-        const topWallets = Object.entries(wallets).sort(([, a], [, b]) => b.totalSize - a.totalSize).slice(0, 10);
-        const yesTotal = globalWhales.filter((w) => w.side === "YES").length;
-        const noTotal = globalWhales.length - yesTotal;
-
-        return (
-          <div style={BS.root}>
-            <style>{`
-              @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700;800&display=swap');
-              @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-              *{box-sizing:border-box;margin:0}
-              ::-webkit-scrollbar{width:4px}
-              ::-webkit-scrollbar-thumb{background:#252a3a;border-radius:4px}
-              input:focus,select:focus{border-color:#6c5ce744!important}
-            `}</style>
-
-            {showSearch && (
-              <SearchModal onAdd={addMarket} onClose={() => setShowSearch(false)} />
-            )}
-
-            {/* ═══ HEADER ═══ */}
-            <div style={BS.header}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    background: "linear-gradient(135deg, #6c5ce7, #e74c3c)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 16,
-                    fontWeight: 800,
-                    color: "#fff",
-                  }}
-                >
-                  S
-                </div>
-                <div>
-                  <div
-                    style={{
-                      fontSize: 15,
-                      fontWeight: 800,
-                      color: "#fff",
-                      fontFamily: "JetBrains Mono",
-                      letterSpacing: 2,
-                    }}
-                  >
-                    SIGNAL<span style={{ color: 'var(--accent)' }}>OS</span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 8,
-                      color: 'var(--muted)',
-                      fontFamily: 'JetBrains Mono',
-                      letterSpacing: 3,
-                    }}
-                  >
-                    WHALE INTELLIGENCE
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span
-                  style={{
-                    fontSize: 9,
-                    color:
-                      connectionStatus === 'live'
-                        ? 'var(--positive)'
-                        : connectionStatus === 'degraded'
-                        ? 'var(--warning)'
-                        : 'var(--muted)',
-                    fontFamily: 'JetBrains Mono',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: '50%',
-                      background:
-                        connectionStatus === 'live'
-                          ? 'var(--positive)'
-                          : connectionStatus === 'degraded'
-                          ? 'var(--warning)'
-                          : 'var(--muted)',
-                      animation: running ? 'pulse 1.5s infinite' : 'none',
-                    }}
-                  />
-                  {connectionStatus === "live"
-                    ? "POLYMARKET LIVE"
-                    : connectionStatus === "degraded"
-                    ? "DEGRADED"
-                    : running
-                    ? "CONNECTING"
-                    : "OFFLINE"}
-                </span>
-                {running && (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      color: 'var(--muted)',
-                      fontFamily: 'JetBrains Mono',
-                    }}
-                  >
-                    {fmtUp(uptime)}
-                  </span>
-                )}
-                <button
-                  onClick={() => setShowSearch(true)}
-                  style={{ ...BS.btn, ...BS.neutralBtn }}
-                >
-                  + Market
-                </button>
-                {!running ? (
-                  <button
-                    onClick={start}
-                    style={{ ...BS.btn, background: 'var(--positive)', color: '#fff' }}
-                  >
-                    ▶ START
-                  </button>
-                ) : (
-                  <button
-                    onClick={stop}
-                    style={{ ...BS.btn, background: 'var(--negative)', color: '#fff' }}
-                  >
-                    ■ STOP
-                  </button>
-                )}
-
-                {/* Theme toggle button.  Shows a sun icon in dark mode and a moon icon in light mode. */}
-                <button
-                  onClick={toggleTheme}
-                  style={{ ...BS.btn, ...BS.neutralBtn }}
-                >
-                  {theme === 'dark' ? '☀' : '🌙'}
-                </button>
-              </div>
-            </div>
-
-            {/* ═══ CONFIG ═══ */}
-            <div style={BS.configRow}>
-              <label style={BS.cfgLabel}>
-                <span>Whale $ threshold</span>
-                <input
-                  type="number"
-                  value={thresholdUsd}
-                  onChange={(e) => setThresholdUsd(Number(e.target.value))}
-                  style={BS.cfgInput}
-                  step="5000"
-                />
-              </label>
-              <label style={BS.cfgLabel}>
-                <span>Whale % of volume</span>
-                <input
-                  type="number"
-                  value={thresholdPct}
-                  onChange={(e) => setThresholdPct(Number(e.target.value))}
-                  style={BS.cfgInput}
-                  step="0.1"
-                  min="0.1"
-                />
-              </label>
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  alignItems: "flex-end",
-                  justifyContent: "flex-end",
-                }}
-              >
-                <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'JetBrains Mono' }}>
-                  Tracking {trackedMarkets.length} market{trackedMarkets.length !== 1 ? 's' : ''} | Threshold: {F.bigUsd(thresholdUsd)} or {thresholdPct}%
-                </span>
-              </div>
-            </div>
-
-            {/* ═══ STATS ═══ */}
-            {globalWhales.length > 0 && (
-              <>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(5, 1fr)",
-                    gap: 6,
-                    marginBottom: 6,
-                  }}
-                >
-                  {[
-                    { l: "WHALES", v: globalWhales.length, c: "#6c5ce7" },
-                    {
-                      l: "WHALE VOL",
-                      v: F.bigUsd(globalWhales.reduce((s, w) => s + w.size, 0)),
-                    },
-                    { l: "YES", v: yesTotal, c: "#2ecc71" },
-                    { l: "NO", v: noTotal, c: "#e74c3c" },
-                    { l: "REPEAT", v: topWallets.filter(([, v]) => v.isRepeat).length, c: "#f7b731" },
-                  ].map((s) => (
-                    <div
-                      key={s.l}
-                      style={{
-                        background: 'var(--card-bg)',
-                        borderRadius: 8,
-                        padding: '7px 8px',
-                        border: '1px solid var(--border)',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 7,
-                          color: 'var(--muted)',
-                          fontFamily: 'JetBrains Mono',
-                          fontWeight: 700,
-                          letterSpacing: 1.5,
-                        }}
-                      >
-                        {s.l}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: s.c || 'var(--text)',
-                          fontFamily: 'JetBrains Mono',
-                        }}
-                      >
-                        {s.v}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 2,
-                    alignItems: "center",
-                    marginBottom: 10,
-                  }}
-                >
-                  <span
-                    style={{ fontSize: 9, color: 'var(--positive)', fontFamily: 'JetBrains Mono', width: 32 }}
-                  >
-                    {((yesTotal / (yesTotal + noTotal)) * 100).toFixed(0)}%Y
-                  </span>
-                  <div
-                    style={{
-                      flex: 1,
-                      display: "flex",
-                      gap: 1,
-                      height: 5,
-                      borderRadius: 3,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: 'var(--positive)',
-                        flex: yesTotal || 1,
-                        transition: 'flex 0.5s',
-                      }}
-                    />
-                    <div
-                      style={{
-                        background: 'var(--negative)',
-                        flex: noTotal || 1,
-                        transition: 'flex 0.5s',
-                      }}
-                    />
-                  </div>
-                  <span
-                    style={{ fontSize: 9, color: 'var(--negative)', fontFamily: 'JetBrains Mono', width: 32, textAlign: 'right' }}
-                  >
-                    {((noTotal / (yesTotal + noTotal)) * 100).toFixed(0)}%N
-                  </span>
-                </div>
-              </>
-            )}
-
-            {/* ═══ TABS ═══ */}
-            <div style={{ display: "flex", gap: 2, marginBottom: 10 }}>
-              {[
-                { k: "markets", l: "MARKETS", n: trackedMarkets.length },
-                { k: "feed", l: "WHALE FEED", n: globalWhales.length },
-                { k: "wallets", l: "WALLETS", n: topWallets.length },
-              ].map((t) => (
-                <button
-                  key={t.k}
-                  onClick={() => setTab(t.k)}
-                  style={{
-                    padding: "7px 14px",
-                    border: "none",
-                    borderRadius: "6px 6px 0 0",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    fontFamily: "JetBrains Mono",
-                    letterSpacing: 0.5,
-                    background: tab === t.k ? "#10121c" : "transparent",
-                    color: tab === t.k ? "#ddd" : "#444",
-                    borderBottom: tab === t.k ? "2px solid #6c5ce7" : "2px solid transparent",
-                  }}
-                >
-                  {t.l} <span style={{ color: 'var(--accent)', marginLeft: 4 }}>{t.n}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* ═══ MARKETS TAB ═══ */}
-            {tab === "markets" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {trackedMarkets.length === 0 && (
-                  <div
-                    style={{
-                      background: 'var(--card-bg)',
-                      borderRadius: 12,
-                      border: '1px dashed var(--border)',
-                      padding: '40px 20px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
-                    <div style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 16 }}>No markets tracked yet</div>
-                    <button
-                      onClick={() => setShowSearch(true)}
-                      style={{ ...BS.btn, background: 'var(--accent)', color: '#fff', fontSize: 13, padding: '10px 24px' }}
-                    >
-                      Search Polymarket
-                    </button>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12 }}>Search for any market: iran, bitcoin, trump, fed, recession...</div>
-                  </div>
-                )}
-                {trackedMarkets.map((m) => (
-                  <TrackedMarket
-                    key={m.id}
-                    market={m}
-                    whales={allWhales[m.id] || []}
-                    onRemove={removeMarket}
-                    thresholdUsd={thresholdUsd}
-                    thresholdPct={thresholdPct}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* ═══ WHALE FEED TAB ═══ */}
-            {tab === 'feed' && (
-              <div
-                style={{ background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)', padding: '10px 12px', maxHeight: 500, overflowY: 'auto' }}
-              >
-                {globalWhales.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: 32, color: 'var(--muted)', fontSize: 13 }}>
-                    {running ? 'Monitoring for whales...' : 'Start monitoring to detect whales'}
-                  </div>
-                ) : (
-                  globalWhales.map((w) => (
-                    <div
-                      key={w.id}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '32px 72px 50px 1fr 70px 42px',
-                        gap: 4,
-                        fontSize: 10,
-                        padding: '5px 8px',
-                        fontFamily: 'JetBrains Mono',
-                        color: 'var(--muted)',
-                        background: 'var(--bg)',
-                        borderRadius: 6,
-                        marginBottom: 3,
-                        borderLeft: `3px solid ${w.side === 'YES' ? 'var(--positive)' : 'var(--negative)'}`,
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: w.side === 'YES' ? 'var(--positive)' : 'var(--negative)',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {w.side}
-                      </span>
-                      <span style={{ color: 'var(--text)', fontWeight: 700 }}>{F.usd(w.size)}</span>
-                      <span>@ {F.cents(w.price)}</span>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)' }}>{w.marketTitle}</span>
-                      <span>{w.wallet?.slice(0, 10) || '?'}</span>
-                      <span style={{ textAlign: 'right', color: 'var(--muted)' }}>{F.ago(w.timestamp)}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* ═══ WALLETS TAB ═══ */}
-            {tab === 'wallets' && (
-              <div
-                style={{ background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)', padding: '10px 12px', maxHeight: 500, overflowY: 'auto' }}
-              >
-                {topWallets.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: 32, color: 'var(--muted)', fontSize: 13 }}>No whale wallets detected yet</div>
-                ) : (
-                  topWallets.map(([addr, info]) => {
-                    const yc = info.sides.filter((s) => s === "YES").length;
-                    const nc = info.sides.length - yc;
-                    const dom = yc > nc ? "YES" : yc < nc ? "NO" : "MIXED";
-                    const domPct = info.sides.length > 0 ? ((Math.max(yc, nc) / info.sides.length) * 100).toFixed(0) : 0;
-                    return (
-                      <div
-                        key={addr}
-                        style={{ padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, marginBottom: 6, borderLeft: `3px solid ${info.isRepeat ? 'var(--warning)' : info.crossMarket ? 'var(--negative)' : 'var(--border)'}` }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ color: 'var(--text)', fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: 600 }}>{addr}</span>
-                          <div style={{ display: "flex", gap: 4 }}>
-                            {info.isRepeat && (
-                              <span style={{ background: '#f7b73118', color: 'var(--warning)', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: 'JetBrains Mono' }}>REPEAT</span>
-                            )}
-                            {info.crossMarket && (
-                              <span style={{ background: '#e74c3c18', color: 'var(--negative)', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: 'JetBrains Mono' }}>CROSS-MKT</span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 14, marginTop: 5, fontSize: 11, fontFamily: "JetBrains Mono", color: "#666" }}>
-                          <span>{info.trades} trades</span>
-                          <span>{F.bigUsd(info.totalSize)}</span>
-                          <span style={{ color: dom === "YES" ? "#2ecc71" : dom === "NO" ? "#e74c3c" : "#888" }}>{dom} ({domPct}%)</span>
-                          <span>{info.markets.length} mkt{info.markets.length > 1 ? "s" : ""}</span>
-                        </div>
-                        <div style={{ display: "flex", gap: 1, marginTop: 5, height: 3, borderRadius: 2, overflow: "hidden" }}>
-                          <div style={{ background: "#2ecc71", flex: yc || 1 }} />
-                          <div style={{ background: "#e74c3c", flex: nc || 1 }} />
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* ═══ INSIGHTS ═══ */}
-            <div
-              style={{
-                padding: '12px 18px',
-                background: 'var(--card-bg)',
-                borderRadius: 10,
-                border: '1px solid var(--border)',
-                marginBottom: 12,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontSize: 14, color: 'var(--text)' }}>Market Insights</h3>
-              </div>
-              {trending.length === 0 ? (
-                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 8 }}>Fetching trending markets…</div>
-              ) : (
-                trending.map((m) => (
-                  <div key={m.id} style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>
-                      {m.question.length > 80 ? m.question.slice(0, 77) + '…' : m.question}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
-                      Volume: {Number(m.volume).toLocaleString()} · Liquidity: {Number(m.liquidity).toLocaleString()}
-                    </div>
-                  </div>
-                ))
-              )}
-              <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 10 }}>
-                Prices reflect the market’s collective expectation of event probabilities. Explore these active markets for deeper insight.
-              </div>
-            </div>
-
-            {/* ═══ FOOTER ═══ */}
-            <div
-              style={{
-                marginTop: 14,
-                padding: '8px 14px',
-                background: 'var(--card-bg)',
-                borderRadius: 8,
-                border: '1px solid var(--border)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 8,
-              }}
-            >
-              <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'JetBrains Mono' }}>
-                SignalOS Whale Intelligence | Data: Polymarket Gamma + CLOB API | Shared alerts via persistent storage
-              </div>
-              <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'JetBrains Mono' }}>
-                To share: send this conversation link. All whale alerts sync across viewers.
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // ═══════════════════════════════════════════════════════
-      // STYLES
-      // ═══════════════════════════════════════════════════════
-      const BS = {
-        // Root container: width constrained, theme colours from CSS variables
-        root: {
-          fontFamily: "'DM Sans', sans-serif",
-          background: "var(--bg)",
-          color: "var(--text)",
-          minHeight: "100vh",
-          padding: 12,
-          maxWidth: 860,
-          margin: "0 auto",
-        },
-        // Top bar container for logo and controls
-        header: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "14px 18px",
-          background: "var(--card-bg)",
-          borderRadius: 12,
-          border: "1px solid var(--border)",
-          marginBottom: 12,
-          flexWrap: "wrap",
-          gap: 8,
-        },
-        // Base button styles; extend with primaryBtn or neutralBtn depending on context
-        btn: {
-          padding: "8px 16px",
-          borderRadius: 8,
-          border: "none",
-          fontWeight: 700,
-          fontSize: 12,
-          cursor: "pointer",
-          fontFamily: "JetBrains Mono, monospace",
-          letterSpacing: 0.5,
-          transition: "background 0.2s, color 0.2s",
-        },
-        primaryBtn: {
-          background: "var(--accent)",
-          color: "#fff",
-        },
-        neutralBtn: {
-          background: "var(--btn-neutral-bg)",
-          color: "var(--btn-neutral-color)",
-          border: "1px solid var(--btn-neutral-border)",
-        },
-        // Configuration row container
-        configRow: {
-          display: "flex",
-          gap: 14,
-          padding: "12px 18px",
-          background: "var(--card-bg)",
-          borderRadius: 10,
-          border: "1px solid var(--border)",
-          marginBottom: 12,
-          alignItems: "flex-end",
-          flexWrap: "wrap",
-        },
-        cfgLabel: {
-          display: "flex",
-          flexDirection: "column",
-          gap: 4,
-          fontSize: 11,
-          color: "var(--muted)",
-          fontFamily: "JetBrains Mono, monospace",
-          fontWeight: 600,
-        },
-        cfgInput: {
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-          padding: "7px 10px",
-          color: "var(--text)",
-          fontSize: 13,
-          fontFamily: "JetBrains Mono, monospace",
-          width: 120,
-          outline: "none",
-          transition: "border 0.2s",
-        },
-      };
-
-      // Mount our app
-      const rootElem = document.getElementById("root");
-      const root = ReactDOM.createRoot(rootElem);
-      root.render(<SignalOS />);
-    </script>
-  </body>
+  // Load tracked markets from localStorage
+  loadTracked();
+  renderTracked();
+  // Load trending markets
+  loadTrending();
+})();
+</script>
+</body>
 </html>
